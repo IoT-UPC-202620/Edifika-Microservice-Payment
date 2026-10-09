@@ -6,6 +6,10 @@ import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment;
 
 import static io.github.encryptorcode.pluralize.Pluralize.pluralize;
 
+/**
+ * Estrategia de nombres de Hibernate: convierte tablas y columnas a snake_case
+ * y pluraliza los nombres de tabla (ej. PaymentTransaction → payment_transactions).
+ */
 public class SnakeCaseWithPluralizedTablePhysicalNamingStrategy implements PhysicalNamingStrategy {
 
     /**

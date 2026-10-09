@@ -2,7 +2,6 @@ package com.edifika.payment.payment.interfaces.rest.resources;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.Date;
 
 /**
  * Resource de entrada para registrar una nueva deuda (TS07 - Escenario 1).

@@ -15,6 +15,10 @@ import org.springframework.context.annotation.Configuration;
 
 import java.util.List;
 
+/**
+ * Configuración de la documentación OpenAPI (Swagger UI) del microservicio,
+ * incluido el esquema de seguridad Bearer JWT para probar los endpoints protegidos.
+ */
 @Configuration
 public class OpenApiConfiguration {
 

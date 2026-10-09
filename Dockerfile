@@ -1,3 +1,6 @@
+# Imagen del microservicio Payment de Edifika (build multi-etapa con Maven y JRE 21).
+# Configuración por variables de entorno: ver src/main/resources/application.properties.
+
 # Etapa 1: Build
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /app

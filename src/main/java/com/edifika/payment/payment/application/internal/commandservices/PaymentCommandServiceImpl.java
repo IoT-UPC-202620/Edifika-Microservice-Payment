@@ -1,60 +1,67 @@
 package com.edifika.payment.payment.application.internal.commandservices;
 
+import com.edifika.payment.payment.application.internal.outboundservices.acl.ExternalUnitService;
+import com.edifika.payment.payment.application.internal.sagas.PaymentSaga;
+import com.edifika.payment.payment.domain.exceptions.UnitNotFoundException;
 import com.edifika.payment.payment.domain.model.aggregates.Debt;
 import com.edifika.payment.payment.domain.model.aggregates.Payment;
 import com.edifika.payment.payment.domain.model.commands.ConfirmPaymentCommand;
 import com.edifika.payment.payment.domain.model.commands.CreateDebtCommand;
+import com.edifika.payment.payment.domain.model.commands.MarkOverdueDebtsCommand;
 import com.edifika.payment.payment.domain.model.commands.RegisterPaymentCommand;
+import com.edifika.payment.payment.domain.model.valueobjects.DebtStatus;
 import com.edifika.payment.payment.domain.services.PaymentCommandService;
-import com.edifika.payment.payment.domain.services.PaymentSaga;
 import com.edifika.payment.payment.infrastructure.persistence.jpa.repositories.DebtRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
+/**
+ * Implementación de los casos de uso de escritura del bounded context Payment.
+ * Delega el flujo de cobro en {@link PaymentSaga} y valida las unidades
+ * contra su microservicio a través de la ACL {@link ExternalUnitService}.
+ */
 @Service
 public class PaymentCommandServiceImpl implements PaymentCommandService {
 
-    /**
-     * Métodos de pago que se procesan automáticamente contra la pasarela externa.
-     * Cualquier otro método (ej. VOUCHER, MANUAL) queda registrado en estado
-     * REGISTERED, esperando confirmación manual del administrador (US22/US23).
-     */
-    private static final Set<String> GATEWAY_PROCESSED_METHODS = Set.of("CULQI");
-
     private final DebtRepository debtRepository;
     private final PaymentSaga paymentSaga;
+    private final ExternalUnitService externalUnitService;
 
-    public PaymentCommandServiceImpl(DebtRepository debtRepository, PaymentSaga paymentSaga) {
+    public PaymentCommandServiceImpl(DebtRepository debtRepository,
+                                     PaymentSaga paymentSaga,
+                                     ExternalUnitService externalUnitService) {
         this.debtRepository = debtRepository;
         this.paymentSaga = paymentSaga;
+        this.externalUnitService = externalUnitService;
     }
 
     @Override
     public Optional<Debt> createDebt(CreateDebtCommand command) {
-        Debt debt = new Debt(command);
-        return Optional.of(debtRepository.save(debt));
+        if (!externalUnitService.existsUnitById(command.unitId())) {
+            throw new UnitNotFoundException(command.unitId());
+        }
+        return Optional.of(debtRepository.save(new Debt(command)));
     }
 
     @Override
-    public Optional<Payment> registerPayment(RegisterPaymentCommand command, String culqiToken) {
-        Payment payment = paymentSaga.registerAttempt(command);
-
-        boolean requiresGateway = GATEWAY_PROCESSED_METHODS.contains(command.paymentMethod().toUpperCase());
-        if (!requiresGateway) {
-            // Pago con voucher/manual: queda en REGISTERED, en espera de revisión administrativa.
-            return Optional.of(payment);
-        }
-
-        Payment processed = paymentSaga.processWithGateway(
-                payment.getId(), culqiToken, command.amount(), command.currency()
-        );
-        return Optional.of(processed);
+    public Optional<RegisterPaymentResult> registerPayment(RegisterPaymentCommand command) {
+        return Optional.of(paymentSaga.execute(command));
     }
 
     @Override
     public Optional<Payment> confirmPayment(ConfirmPaymentCommand command) {
         return Optional.of(paymentSaga.confirmManually(command));
+    }
+
+    @Override
+    @Transactional
+    public int markOverdueDebts(MarkOverdueDebtsCommand command) {
+        List<Debt> overdueDebts = debtRepository.findByStatusAndDueDateBefore(DebtStatus.PENDING, command.referenceDate());
+        overdueDebts.forEach(Debt::markAsOverdue);
+        debtRepository.saveAll(overdueDebts);
+        return overdueDebts.size();
     }
 }
