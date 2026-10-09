@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Edifika - Microservicio Payment.
+  Bounded context de deudas y pagos: registro de deudas por unidad, cobros con Culqi,
+  validación manual de vouchers y vencimiento automático de deudas.
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
@@ -34,6 +39,13 @@
             <groupId>org.mockito</groupId>
             <artifactId>mockito-junit-jupiter</artifactId>
             <version>5.11.0</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Simula la API de Culqi en los tests de integración (sin llamadas reales) -->
+        <dependency>
+            <groupId>org.wiremock</groupId>
+            <artifactId>wiremock-standalone</artifactId>
+            <version>3.13.1</version>
             <scope>test</scope>
         </dependency>
         <dependency>

@@ -8,6 +8,10 @@ import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.util.Date;
 
+/**
+ * Clase base para entidades (no aggregate roots) que requieren identificador
+ * y auditoría automática de fechas de creación y última modificación.
+ */
 @EntityListeners(AuditingEntityListener.class)
 @MappedSuperclass
 public class AuditableModel {
