@@ -14,4 +14,11 @@ public interface ExternalUnitService {
      * @throws ExternalServiceUnavailableException si el servicio de unidades no responde.
      */
     boolean existsUnitById(Long unitId);
+
+    /**
+     * @return true si la unidad pertenece al usuario de la solicitud actual (su JWT se reenvia
+     * y el servicio de unidades responde 404 para unidades ajenas). Siempre se consulta.
+     * @throws ExternalServiceUnavailableException si el servicio de unidades no responde.
+     */
+    boolean isUnitOfCurrentUser(Long unitId);
 }

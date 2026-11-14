@@ -1,5 +1,6 @@
 package com.edifika.payment.payment.interfaces.rest;
 
+import com.edifika.payment.payment.application.internal.outboundservices.acl.ExternalUnitService;
 import com.edifika.payment.payment.domain.exceptions.DebtNotFoundException;
 import com.edifika.payment.payment.domain.exceptions.PaymentNotFoundException;
 import com.edifika.payment.payment.domain.model.aggregates.Payment;
@@ -21,6 +22,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -47,11 +49,33 @@ public class PaymentController {
 
     private final PaymentCommandService paymentCommandService;
     private final PaymentQueryService paymentQueryService;
+    private final ExternalUnitService externalUnitService;
 
     public PaymentController(PaymentCommandService paymentCommandService,
-                             PaymentQueryService paymentQueryService) {
+                             PaymentQueryService paymentQueryService,
+                             ExternalUnitService externalUnitService) {
         this.paymentCommandService = paymentCommandService;
         this.paymentQueryService = paymentQueryService;
+        this.externalUnitService = externalUnitService;
+    }
+
+    /**
+     * Evita IDOR: OWNER/TENANT solo operan sobre deudas de sus propias unidades; ADMIN, sobre todas.
+     * Fail closed: sin usuario autenticado -> 401; si Residential no responde o falla (distinto de 404)
+     * -> ExternalServiceUnavailableException (503) y la operacion no continua.
+     */
+    private void ensureOwnUnit(AuthenticatedUser user, Long unitId) {
+        requireUser(user);
+        if (user.isAdmin()) return;
+        if (unitId == null || !externalUnitService.isUnitOfCurrentUser(unitId)) {
+            throw new AccessDeniedException("La deuda no pertenece a una unidad del usuario");
+        }
+    }
+
+    private static void requireUser(AuthenticatedUser user) {
+        if (user == null) {
+            throw new AuthenticationCredentialsNotFoundException("Se requiere un usuario autenticado");
+        }
     }
 
     // ---------- Deudas ----------
@@ -76,9 +100,12 @@ public class PaymentController {
      */
     @GetMapping("/debts/{debtId}")
     @Operation(summary = "Obtener una deuda por id")
-    public ResponseEntity<DebtResource> getDebtById(@PathVariable Long debtId) {
+    public ResponseEntity<DebtResource> getDebtById(@AuthenticationPrincipal AuthenticatedUser user,
+                                                    @PathVariable Long debtId) {
+        requireUser(user);
         var debt = paymentQueryService.getDebtById(new GetDebtByIdQuery(debtId))
                 .orElseThrow(() -> new DebtNotFoundException(debtId));
+        ensureOwnUnit(user, debt.getUnitId());
         return ResponseEntity.ok(DebtResourceFromEntityAssembler.toResourceFromEntity(debt));
     }
 
@@ -87,7 +114,9 @@ public class PaymentController {
      */
     @GetMapping("/debts/unit/{unitId}")
     @Operation(summary = "Listar las deudas de una unidad")
-    public ResponseEntity<List<DebtResource>> getDebtsByUnit(@PathVariable Long unitId) {
+    public ResponseEntity<List<DebtResource>> getDebtsByUnit(@AuthenticationPrincipal AuthenticatedUser user,
+                                                             @PathVariable Long unitId) {
+        ensureOwnUnit(user, unitId);
         var debts = paymentQueryService.getDebtsByUnit(new GetDebtsByUnitQuery(unitId));
         return ResponseEntity.ok(debts.stream().map(DebtResourceFromEntityAssembler::toResourceFromEntity).toList());
     }
@@ -130,6 +159,13 @@ public class PaymentController {
                     example = "3f6c1b8e-7a2d-4c1e-9b0a-2d5e8f1a6c34")
             @RequestHeader(name = IDEMPOTENCY_KEY_HEADER, required = false) String idempotencyKey,
             @RequestBody RegisterPaymentResource resource) {
+        requireUser(user);
+        // Antes de registrar el intento (y de llamar a Culqi): la deuda debe ser de una unidad del usuario.
+        if (resource.debtId() != null && !user.isAdmin()) {
+            var debt = paymentQueryService.getDebtById(new GetDebtByIdQuery(resource.debtId()))
+                    .orElseThrow(() -> new DebtNotFoundException(resource.debtId()));
+            ensureOwnUnit(user, debt.getUnitId());
+        }
         var command = RegisterPaymentCommandFromResourceAssembler.toCommandFromResource(
                 resource, idempotencyKey, user.requireUserId(), user.email());
         return paymentCommandService.registerPayment(command)
@@ -238,6 +274,7 @@ public class PaymentController {
     }
 
     private static void ensureCanAccessDataOf(AuthenticatedUser user, Long ownerUserId) {
+        requireUser(user);
         if (!user.canAccessDataOf(ownerUserId)) {
             throw new AccessDeniedException("No puede acceder a los pagos de otro usuario");
         }
