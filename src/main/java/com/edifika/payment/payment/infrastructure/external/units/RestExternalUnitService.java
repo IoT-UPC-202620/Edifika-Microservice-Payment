@@ -48,9 +48,19 @@ public class RestExternalUnitService implements ExternalUnitService {
             log.debug("Validación de unidades desactivada; se asume que la unidad {} existe", unitId);
             return true;
         }
+        return lookup(properties.unitPath(), unitId);
+    }
+
+    @Override
+    public boolean isUnitOfCurrentUser(Long unitId) {
+        // Residential solo responde 2xx si la unidad es del usuario del JWT (o si es ADMIN).
+        return lookup(properties.ownUnitPath(), unitId);
+    }
+
+    private boolean lookup(String path, Long unitId) {
         try {
             return restClient.get()
-                    .uri(properties.unitPath(), unitId)
+                    .uri(path, unitId)
                     .headers(headers -> currentAuthorizationHeader()
                             .ifPresent(value -> headers.set(HttpHeaders.AUTHORIZATION, value)))
                     .exchange((request, response) -> {
